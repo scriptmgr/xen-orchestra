@@ -378,11 +378,28 @@ configure_firewall() {
 
   # Configure firewall based on system
   if command -v firewall-cmd >/dev/null 2>&1; then
+    firewall-cmd --permanent --add-service=ssh 2>/dev/null || true
+    firewall-cmd --permanent --add-service=http 2>/dev/null || true
+    firewall-cmd --permanent --add-service=https 2>/dev/null || true
     firewall-cmd --permanent --add-port="${XO_PORT}/tcp" 2>/dev/null || true
+    # Mosh server uses UDP 60000-61000 for encrypted remote terminal sessions
+    firewall-cmd --permanent --add-port=60000-61000/udp 2>/dev/null || true
+    # Allow ICMP ping for monitoring
+    firewall-cmd --permanent --remove-icmp-block=echo-request 2>/dev/null || true
+    firewall-cmd --permanent --remove-icmp-block=echo-reply 2>/dev/null || true
     firewall-cmd --reload 2>/dev/null || true
     print_success "Firewall configured (firewalld)"
   elif command -v ufw >/dev/null 2>&1; then
+    ufw allow 22/tcp 2>/dev/null || true
+    ufw allow 80/tcp 2>/dev/null || true
+    ufw allow 443/tcp 2>/dev/null || true
     ufw allow "${XO_PORT}/tcp" 2>/dev/null || true
+    # Mosh server uses UDP 60000-61000 for encrypted remote terminal sessions
+    ufw allow 60000:61000/udp 2>/dev/null || true
+    # Allow ICMP ping — inject into before.rules if not already present
+    if [ -f /etc/ufw/before.rules ] && ! grep -q "# ICMP ping allow" /etc/ufw/before.rules 2>/dev/null; then
+      sed -i '/^COMMIT$/i # ICMP ping allow\n-A ufw-before-input -p icmp --icmp-type echo-request -j ACCEPT\n-A ufw-before-input -p icmp --icmp-type echo-reply -j ACCEPT' /etc/ufw/before.rules 2>/dev/null || true
+    fi
     print_success "Firewall configured (ufw)"
   else
     print_warn "No firewall detected, skipping configuration"
